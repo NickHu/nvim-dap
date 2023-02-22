@@ -61,23 +61,26 @@ local function parse_chunk_loop()
 end
 
 
-function M.create_read_loop(handle_body)
+function M.create_read_loop(handle_body, on_no_chunk)
   local parse_chunk = coroutine.wrap(parse_chunk_loop)
   parse_chunk()
   return function (err, chunk)
     if err then
-      utils.notify(err, vim.log.levels.ERROR)
+      vim.schedule(function()
+        utils.notify(err, vim.log.levels.ERROR)
+      end)
       return
     end
     if not chunk then
+      if on_no_chunk then
+        on_no_chunk()
+      end
       return
     end
     while true do
       local headers, body = parse_chunk(chunk)
       if headers then
-        vim.schedule(function()
-          handle_body(body)
-        end)
+        handle_body(body)
         chunk = ''
       else
         break

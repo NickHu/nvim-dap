@@ -1,6 +1,10 @@
 local api = vim.api
-local utils = require('dap.utils')
 local M = {}
+
+---@type table<number, Session>
+local sessions = {}
+
+---@type Session|nil
 local session = nil
 local last_run = nil
 
@@ -16,6 +20,10 @@ local function log()
   return require('dap.log').create_logger('dap.log')
 end
 
+local function notify(...)
+  lazy.utils.notify(...)
+end
+
 
 M.status = function(...)
   return lazy.progress.status(...)
@@ -25,13 +33,78 @@ M.repl = setmetatable({}, {
     return require('dap.repl')[key]
   end
 })
+
+
+---@class DapListeners
+---@field event_breakpoint table<string, fun(session: Session, body: any)>
+---@field event_capabilities table<string, fun(session: Session, body: any)>
+---@field event_continued table<string, fun(session: Session, body: any)>
+---@field event_exited table<string, fun(session: Session, body: any)>
+---@field event_initialized table<string, fun(session: Session, body: any)>
+---@field event_invalidated table<string, fun(session: Session, body: any)>
+---@field event_loadedSource table<string, fun(session: Session, body: any)>
+---@field event_memory table<string, fun(session: Session, body: any)>
+---@field event_module table<string, fun(session: Session, body: any)>
+---@field event_output table<string, fun(session: Session, body: any)>
+---@field event_process table<string, fun(session: Session, body: any)>
+---@field event_progressEnd table<string, fun(session: Session, body: dap.ProgressEndEvent)>
+---@field event_progressStart table<string, fun(session: Session, body: dap.ProgressStartEvent)>
+---@field event_progressUpdate table<string, fun(session: Session, body: dap.ProgressUpdateEvent)>
+---@field event_stopped table<string, fun(session: Session, body: dap.StoppedEvent)>
+---@field event_terminated table<string, fun(session: Session, body: dap.TerminatedEvent)>
+---@field event_thread table<string, fun(session: Session, body: any)>
+---@field attach table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field breakpointLocations table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field completions table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field configurationDone table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field continue table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field dataBreakpointInfo table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field disassemble table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field disconnect table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field evaluate table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field exceptionInfo table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field goto table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field gotoTargets table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field initialize table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field launch table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field loadedSources table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field modules table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field next table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field pause table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field readMemory table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field restart table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field restartFrame table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field reverseContinue table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field scopes table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field setBreakpoints table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field setDataBreakpoints table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field setExceptionBreakpoints table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field setExpression table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field setFunctionBreakpoints table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field setInstructionBreakpoints table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field setVariable table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field source table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field stackTrace table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field stepBack table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field stepIn table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field stepInTargets table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field stepOut table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field terminate table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field terminateThreads table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field threads table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field variables table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+---@field writeMemory table<string, fun(session: Session, err: any, body: any, request: any, seq: number)>
+
+
 M.listeners = {
+  ---@type DapListeners
   before = setmetatable({}, {
     __index = function(tbl, key)
       rawset(tbl, key, {})
       return rawget(tbl, key)
     end
   });
+  ---@type DapListeners
   after = setmetatable({}, {
     __index = function(tbl, key)
       rawset(tbl, key, {})
@@ -41,6 +114,14 @@ M.listeners = {
 }
 
 
+M.listeners.after.event_stopped['dap.sessions'] = function(s)
+  local lsession = session
+  if not lsession or not lsession.stopped_thread_id then
+    M.set_session(s)
+  end
+end
+
+
 local function from_fallback(_, key)
   return M.defaults.fallback[key]
 end
@@ -48,9 +129,16 @@ M.defaults = setmetatable(
   {
     fallback = {
       exception_breakpoints = 'default';
-      -- type SteppingGranularity = 'statement' | 'line' | 'instruction'
+      ---@type "statement"|"line"|"instruction"
       stepping_granularity = 'statement';
+
+      ---@type string|fun(): number bufnr, number|nil win
       terminal_win_cmd = 'belowright new';
+      focus_terminal = false;
+      auto_continue_if_many_stopped = true;
+
+      ---@type string|nil
+      switchbuf = nil
     },
   },
   {
@@ -70,93 +158,181 @@ M.defaults = setmetatable(
 local DAP_QUICKFIX_TITLE = "DAP Breakpoints"
 local DAP_QUICKFIX_CONTEXT = DAP_QUICKFIX_TITLE
 
---- For extension of language specific debug adapters.
---
--- `adapters.<type>` where <type> is specified in a configuration.
---
--- For example:
---
--- require('dap').adapters.python = {
---    type = 'executable';
---    command = '/path/to/python';
---    args = {'-m', 'debugpy.adapter' };
--- }
---
+---@class Adapter
+---@field type string
+---@field id string|nil
+---@field options nil|AdapterOptions
+---@field enrich_config fun(config: Configuration, on_config: fun(config: Configuration))
+
+---@class AdapterOptions
+---@field initialize_timeout_sec nil|number
+---@field disconnect_timeout_sec nil|number
+---@field source_filetype nil|string
+
+---@class ExecutableAdapter : Adapter
+---@field type "executable"
+---@field command string
+---@field args string[]
+---@field options nil|ExecutableOptions
+
+---@class ExecutableOptions : AdapterOptions
+---@field env nil|table<string, string>
+---@field cwd nil|string
+---@field detached nil|boolean
+
+---@class ServerOptions : AdapterOptions
+---@field max_retries nil|number
+
+---@class ServerAdapter : Adapter
+---@field type "server"
+---@field host string|nil
+---@field port integer
+---@field executable nil|ServerAdapterExecutable
+---@field options nil|ServerOptions
+
+---@class ServerAdapterExecutable
+---@field command string
+---@field args nil|string[]
+---@field cwd nil|string
+---@field detached nil|boolean
+
+
+--- Adapter definitions. See `:help dap-adapter` for more help
+---
+--- An example:
+---
+--- ```
+--- require('dap').adapter.debugpy = {
+---   {
+---       type = "executable"
+---       command = "/usr/bin/python",
+---       args = {"-m", "debugpy.adapter"},
+---   },
+--- }
+--- ```
+---@type table<string, Adapter|fun(callback: fun(adapter: Adapter), config: Configuration)>
 M.adapters = {}
 
 
---- Configurations for languages
---
--- Example:
---
--- require('dap').configurations.python = {
---  {
---    type = 'python';
---    request = 'launch';
---    name = "Launch file";
---
---    -- Some predefined variables are supported. Their definitions can be found here
---    -- https://code.visualstudio.com/docs/editor/variables-reference#_predefined-variables-examples
---    -- The supported variables are:
---    -- ${file}
---    -- ${fileBasename}
---    -- ${fileBasenameNoExtension}
---    -- ${fileDirname}
---    -- ${fileExtname}
---    -- ${relativeFile}
---    -- ${relativeFileDirname}
---    -- ${workspaceFolder}
---    -- ${workspaceFolderBasename}
---    program = "${file}";
---
---    -- values other than type, request and name can be functions, they'll be evaluated when the configuration is used
---    pythonPath = function()
---      local cwd = vim.fn.getcwd()
---      if vim.fn.executable(cwd .. '/venv/bin/python') then
---        return cwd .. '/venv/bin/python'
---      elseif vim.fn.executable(cwd .. '/.venv/bin/python') then
---        return cwd .. '/.venv/bin/python'
---      else
---        return '/usr/bin/python'
---      end
---    end;
---  }
--- }
---
+---@class Configuration
+---@field type string
+---@field request "launch"|"attach"
+---@field name string
+
+--- Configurations per adapter. See `:help dap-configuration` for more help.
+---
+--- An example:
+---
+--- ```
+--- require('dap').configurations.python = {
+---   {
+---       name = "My configuration",
+---       type = "debugpy", -- references an entry in dap.adapters
+---       request = "launch",
+---       -- + Other debug adapter specific configuration options
+---   },
+--- }
+--- ```
+---@type table<string, Configuration[]>
 M.configurations = {}
 
+local signs = {
+  DapBreakpoint = { text = "B", texthl = "", linehl = "", numhl = "" },
+  DapBreakpointCondition = { text = "C", texthl = "", linehl = "", numhl = "" },
+  DapBreakpointRejected = { text = 'R', texthl = '', linehl = '', numhl = '' },
+  DapLogPoint = { text = 'L', texthl = '', linehl = '', numhl = '' },
+  DapStopped = { text = '→', texthl = '', linehl = 'debugPC', numhl = '' },
+}
 
-vim.fn.sign_define('DapBreakpoint', {text='B', texthl='', linehl='', numhl=''})
-vim.fn.sign_define("DapBreakpointCondition", { text = "C", texthl = "", linehl = "", numhl = "" })
-vim.fn.sign_define('DapBreakpointRejected', {text='R', texthl='', linehl='', numhl=''})
-vim.fn.sign_define('DapLogPoint', {text='L', texthl='', linehl='', numhl=''})
-vim.fn.sign_define('DapStopped', {text='→', texthl='', linehl='debugPC', numhl=''})
+local function sign_try_define(name)
+  local s = vim.fn.sign_getdefined(name)
+  if vim.tbl_isempty(s) then
+    local opts = signs[name]
+    vim.fn.sign_define(name, opts)
+  end
+end
 
+for name in pairs(signs) do
+  sign_try_define(name)
+end
 
-local function expand_config_variables(option)
+local function eval_option(option)
   if type(option) == 'function' then
     option = option()
   end
+  if type(option) == "thread" then
+    assert(coroutine.status(option) == "suspended", "If option is a thread it must be suspended")
+    local co = coroutine.running()
+    -- Schedule ensures `coroutine.resume` happens _after_ coroutine.yield
+    -- This is necessary in case the option coroutine is synchronous and
+    -- gives back control immediately
+    vim.schedule(function()
+      coroutine.resume(option, co)
+    end)
+    option = coroutine.yield()
+  end
+  return option
+end
+
+local var_placeholders_once = {
+  ['${command:pickProcess}'] = lazy.utils.pick_process
+}
+
+local var_placeholders = {
+  ['${file}'] = function(_)
+    return vim.fn.expand("%:p")
+  end,
+  ['${fileBasename}'] = function(_)
+    return vim.fn.expand("%:t")
+  end,
+  ['${fileBasenameNoExtension}'] = function(_)
+    return vim.fn.fnamemodify(vim.fn.expand("%:t"), ":r")
+  end,
+  ['${fileDirname}'] = function(_)
+    return vim.fn.expand("%:p:h")
+  end,
+  ['${fileExtname}'] = function(_)
+    return vim.fn.expand("%:e")
+  end,
+  ['${relativeFile}'] = function(_)
+    return vim.fn.expand("%:.")
+  end,
+  ['${relativeFileDirname}'] = function(_)
+    return vim.fn.fnamemodify(vim.fn.expand("%:.:h"), ":r")
+  end,
+  ['${workspaceFolder}'] = function(_)
+    return vim.fn.getcwd()
+  end,
+  ['${workspaceFolderBasename}'] = function(_)
+    return vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
+  end,
+  ['${env:([%w_]+)}'] = function(match)
+    return os.getenv(match) or ''
+  end,
+}
+
+local function expand_config_variables(option)
+  option = eval_option(option)
   if type(option) == "table" then
-    return vim.tbl_map(expand_config_variables, option)
+    local mt = getmetatable(option)
+    local result = {}
+    for k, v in pairs(option) do
+      result[expand_config_variables(k)] = expand_config_variables(v)
+    end
+    return setmetatable(result, mt)
   end
   if type(option) ~= "string" then
     return option
   end
-  local variables = {
-    file = vim.fn.expand("%:p");
-    fileBasename = vim.fn.expand("%:t");
-    fileBasenameNoExtension = vim.fn.fnamemodify(vim.fn.expand("%:t"), ":r");
-    fileDirname = vim.fn.expand("%:p:h");
-    fileExtname = vim.fn.expand("%:e");
-    relativeFile = vim.fn.expand("%:.");
-    relativeFileDirname = vim.fn.fnamemodify(vim.fn.expand("%:h"), ":r");
-    workspaceFolder = vim.fn.getcwd();
-    workspaceFolderBasename = vim.fn.fnamemodify(vim.fn.getcwd(), ":t");
-  }
   local ret = option
-  for key, val in pairs(variables) do
-    ret = ret:gsub('${' .. key .. '}', val)
+  for key, fn in pairs(var_placeholders) do
+    ret = ret:gsub(key, fn)
+  end
+  for key, fn in pairs(var_placeholders_once) do
+    if ret:find(key) then
+      local val = eval_option(fn)
+      ret = ret:gsub(key, val)
+    end
   end
   return ret
 end
@@ -176,7 +352,7 @@ local function run_adapter(adapter, configuration, opts)
     lazy.progress.report('Running: ' .. name)
     M.attach(adapter, configuration, opts)
   else
-    utils.notify(string.format('Invalid adapter type %s, expected `executable` or `server`', adapter.type), vim.log.levels.ERROR)
+    notify(string.format('Invalid adapter type %s, expected `executable` or `server`', adapter.type), vim.log.levels.ERROR)
   end
 end
 
@@ -201,7 +377,7 @@ local function maybe_enrich_config_and_run(adapter, configuration, opts)
 end
 
 
-local function select_config_and_run()
+local function select_config_and_run(opts)
   local filetype = api.nvim_buf_get_option(0, 'filetype')
   local configurations = M.configurations[filetype] or {}
   assert(
@@ -213,29 +389,55 @@ local function select_config_and_run()
     )
   )
   if #configurations == 0 then
-    utils.notify(string.format('No configuration found for `%s`. You need to add configs to `dap.configurations.%s` (See `:h dap-configuration`)', filetype, filetype), vim.log.levels.INFO)
+    local msg = 'No configuration found for `%s`. You need to add configs to `dap.configurations.%s` (See `:h dap-configuration`)'
+    notify(string.format(msg, filetype, filetype), vim.log.levels.INFO)
     return
   end
+  opts = opts or {}
+  opts.filetype = opts.filetype or filetype
   lazy.ui.pick_if_many(
     configurations,
     "Configuration: ",
     function(i) return i.name end,
     function(configuration)
       if configuration then
-        M.run(configuration)
+        M.run(configuration, opts)
       else
-        utils.notify('No configuration selected', vim.log.levels.INFO)
+        notify('No configuration selected', vim.log.levels.INFO)
       end
     end
   )
 end
 
 
+---@return Session|nil
+local function first_stopped_session()
+  if session and session.stopped_thread_id then
+    return session
+  end
+  for _, s in pairs(sessions) do
+    if s.stopped_thread_id then
+      return s
+    end
+  end
+  return nil
+end
+
+
+--- Start a debug session
+---@param config Configuration
+---@param opts table|nil
 function M.run(config, opts)
   assert(
     type(config) == 'table',
     'dap.run() must be called with a valid configuration, got ' .. vim.inspect(config))
+
   opts = opts or {}
+  if session and (opts.new == false or (opts.new == nil and session.config.name == config.name)) then
+    M.restart(config, opts)
+    return
+  end
+  opts.filetype = opts.filetype or vim.bo.filetype
   last_run = {
     config = config,
     opts = opts,
@@ -243,49 +445,94 @@ function M.run(config, opts)
   if opts.before then
     config = opts.before(config)
   end
-  config = vim.tbl_map(expand_config_variables, config)
-  local adapter = M.adapters[config.type]
-  if type(adapter) == 'table' then
-    lazy.progress.report('Launching debug adapter')
-    maybe_enrich_config_and_run(adapter, config, opts)
-  elseif type(adapter) == 'function' then
-    lazy.progress.report('Launching debug adapter')
-    adapter(
-      function(resolved_adapter)
-        maybe_enrich_config_and_run(resolved_adapter, config, opts)
-      end,
-      config
-    )
-  else
-    utils.notify(
-      string.format(
-        'Invalid adapter `%s` for config `%s`',
-        vim.inspect(adapter),
+  local trigger_run = coroutine.wrap(function()
+    local mt = getmetatable(config)
+    if mt and type(mt.__call) == "function" then
+      config = config()
+      assert(config and type(config) == "table", "config metatable __call must return a config table")
+    end
+    config = vim.tbl_map(expand_config_variables, config)
+    local adapter = M.adapters[config.type]
+    if type(adapter) == 'table' then
+      lazy.progress.report('Launching debug adapter')
+      maybe_enrich_config_and_run(adapter, config, opts)
+    elseif type(adapter) == 'function' then
+      lazy.progress.report('Launching debug adapter')
+      adapter(
+        function(resolved_adapter)
+          maybe_enrich_config_and_run(resolved_adapter, config, opts)
+        end,
+        config
+      )
+    elseif adapter == nil then
+      notify(string.format(
+        'The selected configuration references adapter `%s`, but dap.adapters.%s is undefined',
+        config.type,
         config.type
-      ),
-      vim.log.levels.ERROR
-    )
-  end
+      ), vim.log.levels.ERROR)
+    else
+      notify(string.format(
+          'Invalid adapter `%s` for config `%s`. Expected a table or function. '
+            .. 'Read :help dap-adapter and define a valid adapter.',
+          vim.inspect(adapter),
+          config.type
+        ),
+        vim.log.levels.ERROR
+      )
+    end
+  end)
+  trigger_run()
 end
 
 
+--- Run the last debug session again
 function M.run_last()
   if last_run then
     M.run(last_run.config, last_run.opts)
   else
-    utils.notify('No configuration available to re-run', vim.log.levels.INFO)
+    notify('No configuration available to re-run', vim.log.levels.INFO)
+  end
+end
+
+--- Step over the current line
+---@param opts table|nil
+function M.step_over(opts)
+  session = first_stopped_session()
+  if not session then
+    return
+  end
+  session:_step('next', opts)
+end
+
+
+function M.focus_frame()
+  if session then
+    if session.current_frame then
+      session:_frame_set(session.current_frame)
+    else
+      local w = require('dap.ui.widgets')
+      w.centered_float(w.threads).open()
+    end
+  else
+    notify('No active session', vim.log.levels.INFO)
   end
 end
 
 
-
-function M.step_over(opts)
-  if not session then return end
-  session:_step('next', opts)
+function M.restart_frame()
+  if session then
+    session:restart_frame()
+  else
+    notify('No active session', vim.log.levels.INFO)
+  end
 end
 
+
 function M.step_into(opts)
-  if not session then return end
+  session = first_stopped_session()
+  if not session then
+    return
+  end
   opts = opts or {}
   local askForTargets = opts.askForTargets
   opts.askForTargets = nil
@@ -296,7 +543,10 @@ function M.step_into(opts)
 
   session:request('stepInTargets', { frameId = session.current_frame.id }, function(err, response)
     if err then
-      utils.notify('Error on step_into: ' .. err.message .. ' (while requesting stepInTargets)', vim.log.levels.ERROR)
+      notify(
+        'Error on step_into: ' .. lazy.utils.fmt_error(err) .. ' (while requesting stepInTargets)',
+        vim.log.levels.ERROR
+      )
       return
     end
 
@@ -306,7 +556,7 @@ function M.step_into(opts)
       function(target) return target.label end,
       function(target)
         if not target or not target.id then
-          utils.notify('No target selected. No stepping.', vim.log.levels.INFO)
+          notify('No target selected. No stepping.', vim.log.levels.INFO)
         else
           opts.targetId = target.id
           session:_step('stepIn', opts)
@@ -316,17 +566,22 @@ function M.step_into(opts)
 end
 
 function M.step_out(opts)
-  if not session then return end
+  session = first_stopped_session()
+  if not session then
+    return
+  end
   session:_step('stepOut', opts)
 end
 
 function M.step_back(opts)
-  if not session then return end
-
+  session = first_stopped_session()
+  if not session then
+    return
+  end
   if session.capabilities.supportsStepBack then
     session:_step('stepBack', opts)
   else
-    utils.notify('Debug Adapter does not support stepping backwards.', vim.log.levels.ERROR)
+    notify('Debug Adapter does not support stepping backwards.', vim.log.levels.ERROR)
   end
 end
 
@@ -335,7 +590,7 @@ function M.reverse_continue(opts)
   if session.capabilities.supportsStepBack then
     session:_step('reverseContinue', opts)
   else
-    utils.notify('Debug Adapter does not support stepping backwards.', vim.log.levels.ERROR)
+    notify('Debug Adapter does not support stepping backwards.', vim.log.levels.ERROR)
   end
 end
 
@@ -348,40 +603,66 @@ end
 
 
 function M.stop()
-  utils.notify('dap.stop() is deprecated. Call dap.close() instead', vim.log.levels.WARN)
+  notify('dap.stop() is deprecated. Call dap.close() instead', vim.log.levels.WARN)
   M.close()
 end
 
 
-function M.terminate(terminate_opts, disconnect_opts, cb)
-  if session then
-    if session.capabilities.supportsTerminateRequest then
-      session.capabilities.supportsTerminateRequest = false
-      local opts = terminate_opts or vim.empty_dict()
-      session:request('terminate', opts, function(err)
-        assert(not err, vim.inspect(err))
-        vim.notify('Session terminated')
-        if cb then
-          cb()
-        end
-      end)
-    else
-      local opts = disconnect_opts or { terminateDebuggee = true }
-      M.disconnect(opts, cb)
-    end
-  else
-    vim.notify('No active session')
-    if cb then
-      cb()
-    end
+local function terminate(lsession, terminate_opts, disconnect_opts, cb)
+  cb = cb or function() end
+  if not lsession then
+    notify('No active session')
+    cb()
+    return
   end
+
+  if lsession.closed then
+    log().warn('User called terminate on already closed session that is still in use')
+    sessions[lsession.id] = nil
+    M.set_session(nil)
+    cb()
+    return
+  end
+  local capabilities = lsession.capabilities or {}
+  if capabilities.supportsTerminateRequest then
+    capabilities.supportsTerminateRequest = false
+    local opts = terminate_opts or vim.empty_dict()
+    local timeout_sec = (lsession.adapter.options or {}).disconnect_timeout_sec or 3
+    local timeout_ms = timeout_sec * 1000
+    lsession:request_with_timeout('terminate', opts, timeout_ms, function(err)
+      if err then
+        log().warn(lazy.utils.fmt_error(err))
+      end
+      if not lsession.closed then
+        lsession:close()
+      end
+      notify('Session terminated')
+      cb()
+    end)
+  else
+    local opts = disconnect_opts or { terminateDebuggee = true }
+    lsession:disconnect(opts, cb)
+  end
+end
+
+
+function M.terminate(terminate_opts, disconnect_opts, cb)
+  local lsession = session
+  if not lsession then
+    local _, s = next(sessions)
+    if s then
+      log().info("Terminate called without active session, switched to", s.id)
+    end
+    lsession = s
+  end
+  terminate(lsession, terminate_opts, disconnect_opts, cb)
 end
 
 
 function M.close()
   if session then
     session:close()
-    session = nil
+    M.set_session(nil)
   end
 end
 
@@ -413,32 +694,46 @@ function M.goto_(line)
 end
 
 
-function M.restart()
-  if not session then return end
-  if session.capabilities.supportsRestartRequest then
-    session:request('restart', nil, function(err0, _)
+function M.restart(config, opts)
+  local lsession = opts.session or session
+  if not lsession then
+    notify('No active session', vim.log.levels.INFO)
+    return
+  end
+  config = config or lsession.config
+  if lsession.capabilities.supportsRestartRequest then
+    lsession:request('restart', config, function(err0, _)
       if err0 then
-        utils.notify('Error restarting debug adapter: ' .. err0.message, vim.log.levels.ERROR)
+        notify('Error restarting debug adapter: ' .. lazy.utils.fmt_error(err0), vim.log.levels.ERROR)
       else
-        utils.notify('Restarted debug adapter', vim.log.levels.INFO)
+        notify('Restarted debug adapter', vim.log.levels.INFO)
       end
     end)
   else
-    utils.notify('Restart not supported', vim.log.levels.ERROR)
+    terminate(lsession, nil, nil, vim.schedule_wrap(function()
+      local nopts = vim.deepcopy(opts)
+      nopts.new = true
+      M.run(config, nopts)
+    end))
   end
 end
 
 
 function M.list_breakpoints(open_quickfix)
   local qf_list = lazy.breakpoints.to_qf_list(lazy.breakpoints.get())
-  vim.fn.setqflist({}, 'r', {
+  local current_qflist_title = vim.fn.getqflist({ title = 1 }).title
+  local action = ' '
+  if current_qflist_title == DAP_QUICKFIX_TITLE then
+    action = 'r'
+  end
+  vim.fn.setqflist({}, action, {
     items = qf_list,
     context = DAP_QUICKFIX_CONTEXT,
     title = DAP_QUICKFIX_TITLE
   })
   if open_quickfix then
     if #qf_list == 0 then
-      utils.notify('No breakpoints set!', vim.log.levels.INFO)
+      notify('No breakpoints set!', vim.log.levels.INFO)
     else
       api.nvim_command('copen')
     end
@@ -449,6 +744,17 @@ function M.set_breakpoint(condition, hit_condition, log_message)
   M.toggle_breakpoint(condition, hit_condition, log_message, true)
 end
 
+
+---@param lsessions table<integer, Session>
+---@param fn fun(lsession: Session)
+local function broadcast(lsessions, fn)
+  for _, lsession in pairs(lsessions) do
+    fn(lsession)
+    broadcast(lsession.children, fn)
+  end
+end
+
+
 function M.toggle_breakpoint(condition, hit_condition, log_message, replace_old)
   lazy.breakpoints.toggle({
     condition = condition,
@@ -456,13 +762,26 @@ function M.toggle_breakpoint(condition, hit_condition, log_message, replace_old)
     log_message = log_message,
     replace = replace_old
   })
-  if session and session.initialized then
-    local bufnr = api.nvim_get_current_buf()
-    session:set_breakpoints(bufnr)
-  end
+  local bufnr = api.nvim_get_current_buf()
+  local bps = lazy.breakpoints.get(bufnr)
+  broadcast(sessions, function(s)
+    s:set_breakpoints(bps)
+  end)
   if vim.fn.getqflist({context = DAP_QUICKFIX_CONTEXT}).context == DAP_QUICKFIX_CONTEXT then
     M.list_breakpoints(false)
   end
+end
+
+
+function M.clear_breakpoints()
+  local bps = lazy.breakpoints.get()
+  for bufnr, _ in pairs(bps) do
+    bps[bufnr] = {}
+  end
+  lazy.breakpoints.clear()
+  broadcast(sessions, function(lsession)
+    lsession:set_breakpoints(bps)
+  end)
 end
 
 
@@ -473,32 +792,43 @@ function M.set_exception_breakpoints(filters, exceptionOptions)
   if session then
     session:set_exception_breakpoints(filters, exceptionOptions)
   else
-    utils.notify('Cannot set exception breakpoints: No active session!', vim.log.levels.INFO)
+    notify('Cannot set exception breakpoints: No active session!', vim.log.levels.INFO)
   end
 end
 
 
 function M.run_to_cursor()
   if not session then
-    utils.notify('Cannot use run_to_cursor without active session', vim.log.levels.INFO)
+    notify('Cannot use run_to_cursor without active session', vim.log.levels.INFO)
     return
   end
   if not session.stopped_thread_id then
-    utils.notify('run_to_cursor can only be used if stopped at a breakpoint', vim.log.levels.INFO)
+    notify('run_to_cursor can only be used if stopped at a breakpoint', vim.log.levels.INFO)
     return
   end
 
-  local bps = lazy.breakpoints.get()
+  local bps_before = lazy.breakpoints.get()
   lazy.breakpoints.clear()
-  local bufnr = api.nvim_get_current_buf()
+  local cur_bufnr = api.nvim_get_current_buf()
   local lnum = api.nvim_win_get_cursor(0)[1]
-  lazy.breakpoints.set({}, bufnr, lnum)
+  lazy.breakpoints.set({}, cur_bufnr, lnum)
+
+  local temp_bps = lazy.breakpoints.get(cur_bufnr)
+  for bufnr, _ in pairs(bps_before) do
+    if bufnr ~= cur_bufnr then
+      temp_bps[bufnr] = {}
+    end
+  end
+
+  if bps_before[cur_bufnr] == nil then
+    bps_before[cur_bufnr] = {}
+  end
 
   local function restore_breakpoints()
     M.listeners.before.event_stopped['dap.run_to_cursor'] = nil
     M.listeners.before.event_terminated['dap.run_to_cursor'] = nil
     lazy.breakpoints.clear()
-    for buf, buf_bps in pairs(bps) do
+    for buf, buf_bps in pairs(bps_before) do
       for _, bp in pairs(buf_bps) do
         local line = bp.line
         local opts = {
@@ -509,27 +839,38 @@ function M.run_to_cursor()
         lazy.breakpoints.set(opts, buf, line)
       end
     end
-    session:set_breakpoints()
+    session:set_breakpoints(bps_before, nil)
   end
 
   M.listeners.before.event_stopped['dap.run_to_cursor'] = restore_breakpoints
   M.listeners.before.event_terminated['dap.run_to_cursor'] = restore_breakpoints
-  session:set_breakpoints(nil, function()
+  session:set_breakpoints(temp_bps, function()
     session:_step('continue')
   end)
 end
 
 
-function M.continue()
+---@param opts? table<string, any>
+function M.continue(opts)
   if not session then
-    select_config_and_run()
+    session = first_stopped_session()
+  end
+
+  opts = opts or {}
+  if not session or opts.new then
+    select_config_and_run(opts)
   elseif session.stopped_thread_id then
     session:_step('continue')
   else
-    local prompt = (session.initialized
-      and "Session active, but not stopped at breakpoint> "
-      or "Session still initializing> "
-    )
+    local stopped_threads = vim.tbl_filter(function(t) return t.stopped end, session.threads)
+    local prompt
+    if not session.initialized then
+      prompt = "Session still initializing> "
+    elseif next(stopped_threads) then
+      prompt = "Not focused on any stopped Thread> "
+    else
+      prompt = "Session active, but not stopped at breakpoint> "
+    end
     local choices = {
       {
         label = "Terminate session",
@@ -556,10 +897,34 @@ function M.continue()
         end,
       },
       {
+        label = "Start additional session",
+        action = function()
+          M.continue({ new = true })
+        end,
+      },
+      {
         label = "Do nothing",
         action = function() end,
       },
     }
+    if next(stopped_threads) then
+      table.insert(choices, 1, {
+        label = "Resume stopped thread",
+        action = vim.schedule_wrap(function()
+          lazy.ui.pick_if_many(
+            stopped_threads,
+            'Thread to resume> ',
+            function(t) return t.name or t.id end,
+            function(choice)
+              if choice then
+                session.stopped_thread_id = choice.id
+                session:_step('continue')
+              end
+            end
+          )
+        end),
+      })
+    end
     lazy.ui.pick_one(choices, prompt, function(x) return x.label end, function(choice)
       if choice then
         choice.action()
@@ -573,10 +938,8 @@ end
 function M.disconnect(opts, cb)
   if session then
     session:disconnect(opts, cb)
-    session:close()
-    session = nil
   else
-    utils.notify('No active session. Doing nothing.', vim.log.levels.INFO)
+    notify('No active session. Doing nothing.', vim.log.levels.INFO)
     if cb then
       cb()
     end
@@ -584,137 +947,56 @@ function M.disconnect(opts, cb)
 end
 
 
-local function completions_to_items(completions, prefix)
-  local candidates = vim.tbl_filter(
-    function(item) return vim.startswith(item.text or item.label, prefix) end,
-    completions
-  )
-  if #candidates == 0 then
-    return {}
+local function add_reset_session_hook(lsession)
+  lsession.on_close['dap.session'] = function(s)
+    assert(s.id == lsession.id, "on_close must not be called with a foreign session")
+    lazy.progress.report('Closed session: ' .. tostring(s.id))
+    sessions[s.id] = nil
+    M.set_session(nil)
   end
-
-  table.sort(candidates, function(a, b) return (a.sortText or a.label) < (b.sortText or b.label) end)
-  local items = {}
-  for _, candidate in pairs(candidates) do
-    table.insert(items, {
-      word = candidate.text or candidate.label;
-      abbr = candidate.label;
-      dup = 0;
-      icase = 1;
-    })
-  end
-  return items
 end
 
 
-function M.omnifunc(findstart, base)
-  local supportsCompletionsRequest = ((session or {}).capabilities or {}).supportsCompletionsRequest;
-  log().debug('omnifunc.findstart', {
-    findstart = findstart;
-    base = base;
-    supportsCompletionsRequest = supportsCompletionsRequest;
-  })
-  if not supportsCompletionsRequest then
-    if findstart == 1 then
-      return -1
-    else
-      return {}
-    end
-  end
-  local col = api.nvim_win_get_cursor(0)[2]
-  local line = api.nvim_get_current_line()
-  local offset = vim.startswith(line, 'dap> ') and 5 or 0
-  local line_to_cursor = line:sub(offset + 1, col)
-  local text_match = vim.fn.match(line_to_cursor, '\\k*$')
-  local prefix = line_to_cursor:sub(text_match + 1)
-
-  log().debug('omnifunc.line', {
-    line = line;
-    col = col + 1 - offset;
-    line_to_cursor = line_to_cursor;
-    text_match = text_match + offset;
-    prefix = prefix;
-  })
-
-  session:request('completions', {
-    frameId = (session.current_frame or {}).id;
-    text = line_to_cursor;
-    column = col + 1 - offset;
-  }, function(err, response)
-    if err then
-      log().error('completions.callback', err.message)
-      return
-    end
-
-    local items = completions_to_items(response.targets, prefix)
-    vim.fn.complete(offset + text_match + 1, items)
-  end)
-
-  -- cancel but stay in completion mode for completion via `completions` callback
-  return -2
-end
-
-
---- Attach to an existing debug-adapter running on host, port
---  and then initialize it with config
---
--- Configuration:         -- Specifies how the debug adapter should connect/launch the debugee
---    request: string     -- attach or launch
---    ...                 -- debug adapter specific options
---
-function M.attach(adapter, config, opts, bwc_dummy)
-  if session then
-    session:close()
-    session = nil
-  end
-  if type(adapter) == 'string' then
-    utils.notify(
-      'dap.launch signature changed from (host, port, config) to (adapter, config), please adjust',
-      vim.log.levels.WARN
-    )
-    local host = adapter
-    local port = config
-    config = opts
-    opts = bwc_dummy
-    adapter = { type = 'server', host = host, port = port, }
-  end
+--- Connect to a debug adapter via TCP
+---@param adapter ServerAdapter
+---@param config Configuration
+---@param opts table
+function M.attach(adapter, config, opts)
   if not config.request then
-    utils.notify('Config needs the `request` property which must be one of `attach` or `launch`', vim.log.levels.ERROR)
+    notify('Config needs the `request` property which must be one of `attach` or `launch`', vim.log.levels.ERROR)
     return
   end
-  assert(adapter.host, 'Adapter used with attach must have a host property')
   assert(adapter.port, 'Adapter used with attach must have a port property')
-  session = require('dap.session'):connect(adapter, opts, function(err)
-    assert(not err, vim.inspect(err))
-    session:initialize(config, adapter)
+  local s
+  s = require('dap.session'):connect(adapter, opts, function(err)
+    if err then
+      notify(
+        string.format("Couldn't connect to %s:%s: %s", adapter.host or '127.0.0.1', adapter.port, err),
+        vim.log.levels.ERROR
+      )
+    else
+      if s then
+        s:initialize(config)
+      end
+    end
   end)
-  return session
+  add_reset_session_hook(s)
+  M.set_session(s)
+  return s
 end
 
 
---- Launch a new debug adapter and then initialize it with config
---
--- Adapter:
---    command: string     -- command to invoke
---    args:    string[]   -- arguments for the command
---    options?: {
---      env?: {}          -- Set the environment variables for the command
---      cwd?: string      -- Set the working directory for the command
---    }
---
---
--- Configuration:         -- Specifies how the debug adapter should connect/launch the debugee
---    request: string     -- attach or launch
---    ...                 -- debug adapter specific options
---
+--- Launch an executable debug adapter and initialize a session
+---
+---@param adapter ExecutableAdapter
+---@param config Configuration
+---@param opts table
 function M.launch(adapter, config, opts)
-  if session then
-    session:close()
-    session = nil
-  end
-  session = require('dap.session'):spawn(adapter, opts)
-  session:initialize(config, adapter)
-  return session
+  local s = require('dap.session'):spawn(adapter, opts)
+  add_reset_session_hook(s)
+  M.set_session(s)
+  s:initialize(config)
+  return s
 end
 
 
@@ -724,22 +1006,43 @@ end
 
 
 function M._vim_exit_handler()
-  if session then
-    session:close()
-    session = nil
+  for _, s in pairs(sessions) do
+    terminate(s)
+    vim.wait(500, function()
+      return session == nil and next(sessions) == nil
+    end)
   end
   M.repl.close()
 end
 
 
---- Return the current session or nil
+--- Currently focused session
+---@return Session|nil
 function M.session()
   return session
 end
 
 
-function M.set_session(s)
-  session = s
+---@return table<number, Session>
+function M.sessions()
+  return sessions
+end
+
+
+---@param new_session Session|nil
+function M.set_session(new_session)
+  if new_session then
+    if new_session.parent == nil then
+      sessions[new_session.id] = new_session
+    end
+    session = new_session
+  else
+    local _, lsession = next(sessions)
+    if lsession then
+      lazy.progress.report('Running: ' .. lsession.config.name)
+    end
+    session = lsession
+  end
 end
 
 

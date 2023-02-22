@@ -1,7 +1,7 @@
 # DAP (Debug Adapter Protocol)
 
-`nvim-dap` is a Debug Adapter Protocol client implementation for [Neovim][1]
-(>= 0.5). `nvim-dap` allows you to:
+`nvim-dap` is a Debug Adapter Protocol client implementation for [Neovim][1].
+`nvim-dap` allows you to:
 
 - Launch an application to debug
 - Attach to running applications and debug them
@@ -12,12 +12,20 @@
 
 ## Installation
 
-- Requires Neovim (>= 0.5)
-- nvim-dap is a plugin. Install it like any other Neovim plugin.
-  - If using [vim-plug][11]: `Plug 'mfussenegger/nvim-dap'`
-  - If using [packer.nvim][12]: `use 'mfussenegger/nvim-dap'`
+[![LuaRocks](https://img.shields.io/luarocks/v/mfussenegger/nvim-dap?logo=lua&color=purple)](https://luarocks.org/modules/mfussenegger/nvim-dap)
+
+- Install nvim-dap like any other Neovim plugin:
+  - `git clone https://github.com/mfussenegger/nvim-dap.git ~/.config/nvim/pack/plugins/start/nvim-dap`
+  - Or with [vim-plug][11]: `Plug 'mfussenegger/nvim-dap'`
+  - Or with [packer.nvim][12]: `use 'mfussenegger/nvim-dap'`
 - Generate the documentation for nvim-dap using `:helptags ALL` or
   `:helptags <PATH-TO-PLUGIN/doc/>`
+
+Supported Neovim versions:
+
+- Latest nightly
+- 0.8.0 (Recommended)
+- 0.7.2
 
 You'll need to install and configure a debug adapter per language. See
 
@@ -47,9 +55,17 @@ supported.
 - [nvim-dap Debug-Adapter Installation & Configuration][5]
 
 The Wiki is community maintained. If you got an adapter working that isn't
-listed yet, please extend the Wiki. If you struggle getting an adapter working,
-please create an issue.
+listed yet, please extend the Wiki.
 
+Some debug adapters have [language specific
+extensions](https://github.com/mfussenegger/nvim-dap/wiki/Extensions#language-specific-extensions).
+Using them over a manual configuration is recommended, as they're
+usually better maintained.
+
+If the instructions in the wiki for a debug adapter are not working, consider
+that debug adapters may have made changes since the instructions were written.
+You may want to read the release notes of the debug adapters or try with an
+older version. Please update the wiki if you discover outdated examples.
 
 ## Goals
 
@@ -72,7 +88,8 @@ that's not listed.
 - Debug adapter installations are out of scope. It's not the business of an
   editor plugin to re-invent a package manager. Use your system package
   manager. Use Nix. Use Ansible.
-  If you disagree, check out [DAPInstall][14].
+
+- [nvim-dapconfig](https://github.com/nvim-lua/wishlist/issues/37#issuecomment-1023363686)
 
 - Vim support. It's not going to happen. Use [vimspector][2] instead.
 
@@ -120,8 +137,6 @@ time.
 
 [1]: https://neovim.io/
 [2]: https://github.com/puremourning/vimspector
-[3]: https://github.com/neovim/nvim-lsp
-[4]: https://github.com/microsoft/debugpy
 [5]: https://github.com/mfussenegger/nvim-dap/wiki/Debug-Adapter-installation
 [7]: https://github.com/theHamsta/nvim-dap-virtual-text
 [8]: https://github.com/mfussenegger/nvim-jdtls
@@ -130,7 +145,6 @@ time.
 [11]: https://github.com/junegunn/vim-plug
 [12]: https://github.com/wbthomason/packer.nvim
 [13]: https://microsoft.github.io/debug-adapter-protocol/implementors/adapters/
-[14]: https://github.com/Pocco81/DAPInstall.nvim
 [15]: https://github.com/rcarriga/nvim-dap-ui
 [demo]: https://user-images.githubusercontent.com/38700/124292938-669a7100-db56-11eb-93b8-77b66994fc8a.gif
 

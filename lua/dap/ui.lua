@@ -1,5 +1,6 @@
 local api = vim.api
 local utils = require('dap.utils')
+local if_nil = utils.if_nil
 local M = {}
 
 
@@ -27,9 +28,13 @@ end
 --  contains exactly one item.
 function M.pick_if_many(items, prompt, label_fn, cb)
   if #items == 1 then
-    cb(items[1])
+    if not cb then
+      return items[1]
+    else
+      cb(items[1])
+    end
   else
-    M.pick_one(items, prompt, label_fn, cb)
+    return M.pick_one(items, prompt, label_fn, cb)
   end
 end
 
@@ -48,14 +53,28 @@ end
 
 
 function M.pick_one(items, prompt, label_fn, cb)
+  local co
+  if not cb then
+    co = coroutine.running()
+    if co then
+      cb = function(item)
+        coroutine.resume(co, item)
+      end
+    end
+  end
+  cb = vim.schedule_wrap(cb)
   if vim.ui then
-    return vim.ui.select(items, {
+    vim.ui.select(items, {
       prompt = prompt,
       format_item = label_fn,
     }, cb)
+  else
+    local result = M.pick_one_sync(items, prompt, label_fn)
+    cb(result)
   end
-  local result = M.pick_one_sync(items, prompt, label_fn)
-  cb(result)
+  if co then
+    return coroutine.yield()
+  end
 end
 
 
@@ -80,6 +99,11 @@ function M.new_tree(opts)
     cb(opts.get_children(item))
   end
   opts.render_child = opts.render_child or opts.render_parent
+  local compute_actions = opts.compute_actions or function() return {} end
+  local extra_context = opts.extra_context or {}
+  local implicit_expand_action = if_nil(opts.implicit_expand_action, true)
+  local is_lazy = opts.is_lazy or function(_) return false end
+  local load_value = opts.load_value or function(_, _) assert(false, "load_value not implemented") end
 
   local self  -- forward reference
 
@@ -143,7 +167,10 @@ function M.new_tree(opts)
       local ctx = {
         actions = context.actions,
         indent = context.indent + 2,
+        compute_actions = context.compute_actions,
+        tree = self,
       }
+      ctx = vim.tbl_deep_extend('keep', ctx, extra_context)
       for _, child in pairs(children) do
         if opts.has_children(child) then
           child.__parent = { key = get_key(value), __parent = value.__parent }
@@ -178,11 +205,19 @@ function M.new_tree(opts)
   local function render_all_expanded(layer, value, indent)
     indent = indent or 2
     local context = {
-      actions = { { label ='Expand', fn = self.toggle, }, },
+      actions = implicit_expand_action and { { label ='Expand', fn = self.toggle, }, } or {},
       indent = indent,
+      compute_actions = compute_actions,
+      tree = self,
     }
+    context = vim.tbl_deep_extend('keep', context, extra_context)
     for _, child in pairs(opts.get_children(value)) do
-      layer.render({child}, with_indent(indent, opts.render_child), context)
+      local ok, line_count = pcall(api.nvim_buf_line_count, layer.buf)
+      if not ok then
+        -- User might have closed the buffer
+        return
+      end
+      layer.render({child}, with_indent(indent, opts.render_child), context, line_count)
       if is_expanded(child) then
         render_all_expanded(layer, child, indent + 2)
       end
@@ -213,16 +248,24 @@ function M.new_tree(opts)
 
   self = {
     toggle = function(layer, value, lnum, context)
-      if is_expanded(value) then
+      if is_lazy(value) then
+        load_value(value, function(var)
+          local render = with_indent(context.indent, opts.render_child)
+          layer.render({var}, render, context, lnum, lnum + 1)
+        end)
+      elseif is_expanded(value) then
         collapse(layer, value, lnum, context)
       elseif opts.has_children(value) then
         expand(layer, value, lnum, context)
       end
     end,
 
-    render = function(layer, value, on_done)
-      layer.render({value}, opts.render_parent)
+    render = function(layer, value, on_done, lnum, end_)
+      layer.render({value}, opts.render_parent, nil, lnum, end_)
       if not opts.has_children(value) then
+        if on_done then
+          on_done()
+        end
         return
       end
       if not is_expanded(value) then
@@ -322,16 +365,34 @@ function M.new_view(new_buf, new_win, opts)
 end
 
 
-function M.trigger_actions()
+function M.trigger_actions(opts)
+  opts = opts or {}
   local buf = api.nvim_get_current_buf()
   local layer = M.get_layer(buf)
   if not layer then return end
   local lnum, col = unpack(api.nvim_win_get_cursor(0))
   lnum = lnum - 1
-  local info = layer.get(lnum, 0, col)
-  local actions = info and info.context and info.context.actions
-  if not actions or #actions == 0 then
+  local info = layer.get(lnum, 0, col) or {}
+  local context = info.context or {}
+  local actions = {}
+  vim.list_extend(actions, context.actions or {})
+  if context.compute_actions then
+    vim.list_extend(actions, context.compute_actions(info))
+  end
+  if opts.filter then
+    local filter = (type(opts.filter) == 'function'
+      and opts.filter
+      or function(x) return x.label == opts.filter end
+    )
+    actions = vim.tbl_filter(filter, actions)
+  end
+  if #actions == 0 then
     utils.notify('No action possible on: ' .. api.nvim_buf_get_lines(buf, lnum, lnum + 1, true)[1], vim.log.levels.INFO)
+    return
+  end
+  if opts.mode == 'first' then
+    local action = actions[1]
+    action.fn(layer, info.item, lnum, info.context)
     return
   end
   M.pick_if_many(
@@ -347,23 +408,28 @@ function M.trigger_actions()
 end
 
 
-function M.get_last_lnum(bufnr)
-  return api.nvim_buf_call(bufnr, function() return vim.fn.line('$') - 1 end)
-end
-
-
+---@type table<number, dap.ui.Layer>
 local layers = {}
 
+---@return nil|dap.ui.Layer
 function M.get_layer(buf)
   return layers[buf]
 end
 
+---@class dap.ui.LineInfo
+---@field mark_id number
+---@field item any
+---@field context table|nil
+
+---@return dap.ui.Layer
 function M.layer(buf)
   assert(buf, 'Need a buffer to operate on')
   local layer = layers[buf]
   if layer then
     return layer
   end
+
+  ---@type table<number, dap.ui.LineInfo>
   local marks = {}
   local ns = api.nvim_create_namespace('dap.ui_layer_' .. buf)
   local nshl = api.nvim_create_namespace('dap.ui_layer_hl_' .. buf)
@@ -375,20 +441,45 @@ function M.layer(buf)
     end
   end
 
+  ---@class dap.ui.Layer
   layer = {
+    buf = buf,
     __marks = marks,
+
     --- Render the items and associate each item to the rendered line
-    -- The item and context can then be retrieved using `.get(lnum)`
-    --
-    -- lines between start and end_ are replaced
-    -- If start == end_, new lines are inserted at the given position
-    -- If start == nil, appends to the end of the buffer
-    --
-    -- start is 0-indexed
-    -- end_ is 0-indexed exclusive
+    ---  The item and context can then be retrieved using `.get(lnum)`
+    ---
+    ---  lines between start and end_ are replaced
+    ---  If start == end_, new lines are inserted at the given position
+    ---  If start == nil, appends to the end of the buffer
+    ---
+    ---@generic T
+    ---@param xs T[]
+    ---@param render_fn? fun(T):string
+    ---@param context table|nil
+    ---@param start nil|number 0-indexed
+    ---@param end_ nil|number 0-indexed exclusive
     render = function(xs, render_fn, context, start, end_)
-      start = start or M.get_last_lnum(buf)
-      end_ = end_ or start
+      if not api.nvim_buf_is_valid(buf) then
+        return
+      end
+      local modifiable = api.nvim_buf_get_option(buf, 'modifiable')
+      api.nvim_buf_set_option(buf, 'modifiable', true)
+      if not start and not end_ then
+        start = api.nvim_buf_line_count(buf) - 1
+        -- Avoid inserting a new line at the end of the buffer
+        -- The case of no lines and one empty line are ambiguous;
+        -- set_lines(buf, 0, 0) would "preserve" the "empty buffer line" while set_lines(buf, 0, -1) replaces it
+        -- Need to use regular end_ = start in other cases to support injecting lines in all other cases
+        if start == 0 and (api.nvim_buf_get_lines(buf, 0, -1, true))[1] == "" then
+          end_ = -1
+        else
+          end_ = start
+        end
+      else
+        start = start or (api.nvim_buf_line_count(buf) - 1)
+        end_ = end_ or start
+      end
       render_fn = render_fn or tostring
       if end_ > start then
         remove_marks(api.nvim_buf_get_extmarks(buf, ns, {start, 0}, {end_ - 1, -1}, {}))
@@ -399,6 +490,9 @@ function M.layer(buf)
       -- the loop below will add the actual values
       local lines = vim.tbl_map(function() return '' end, xs)
       api.nvim_buf_set_lines(buf, start, end_, true, lines)
+      if start == -1 then
+        start = api.nvim_buf_line_count(buf) - #lines
+      end
 
       for i = start, start + #lines - 1 do
         local item = xs[i + 1 - start]
@@ -424,11 +518,15 @@ function M.layer(buf)
         local mark_id = api.nvim_buf_set_extmark(buf, ns, i, 0, {end_col=end_col})
         marks[mark_id] = { mark_id = mark_id, item = item, context = context }
       end
+      api.nvim_buf_set_option(buf, 'modifiable', modifiable)
     end,
 
     --- Get the information associated with a line
-    --
-    -- lnum is 0-indexed
+    ---
+    ---@param lnum number 0-indexed line number
+    ---@param start_col nil|number
+    ---@param end_col nil|number
+    ---@return nil|dap.ui.LineInfo
     get = function(lnum, start_col, end_col)
       local line = api.nvim_buf_get_lines(buf, lnum, lnum + 1, true)[1]
       start_col = start_col or 0

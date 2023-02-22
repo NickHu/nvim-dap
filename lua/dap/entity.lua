@@ -20,6 +20,11 @@ function variable.get_key(var)
 end
 
 
+function variable.is_lazy(var)
+  return (var.presentationHint or {}).lazy
+end
+
+
 function variable.render_parent(var)
   if var.name then
     return variable.render_child(var, 0)
@@ -86,7 +91,7 @@ function variable.fetch_children(var, cb)
     local params = { variablesReference = var.variablesReference }
     session:request('variables', params, function(err, resp)
       if err then
-        utils.notify(err.message, vim.log.levels.ERROR)
+        utils.notify('Error fetching variables: ' .. err.message, vim.log.levels.ERROR)
       else
         var.variables = sort_vars(resp.variables)
         cb(var.variables)
@@ -98,13 +103,137 @@ function variable.fetch_children(var, cb)
 end
 
 
+function variable.load_value(var, cb)
+  assert(variable.is_lazy(var), "Must not call load_value if not lazy")
+  local session = require('dap').session()
+  if not session then
+    cb(var)
+  else
+    local params = { variablesReference = var.variablesReference }
+    session:request('variables', params, function(err, resp)
+      if err then
+        utils.notify('Error fetching variable: ' .. err.message, vim.log.levels.ERROR)
+      else
+        local new_var = resp.variables[1]
+        -- keep using the old variable;
+        -- it has parent references and the parent contains references to the child
+        var.value = new_var.value
+        var.presentationHint = new_var.presentationHint
+        var.variablesReference = new_var.variablesReference
+        var.namedVariables = new_var.namedVariables
+        var.indexedVariables = new_var.indexedVariables
+        cb(var)
+      end
+    end)
+  end
+end
+
+
+local function get_parent(var, variables)
+  for _, v in pairs(variables) do
+    local children = variable.get_children(v)
+    if children then
+      if vim.tbl_contains(children, var) then
+        return v
+      end
+      local parent = get_parent(var, children)
+      if parent then
+        return parent
+      end
+    end
+  end
+  return nil
+end
+
+
+local function set_variable(_, item, _, context)
+  local session = require('dap').session()
+  if not session then
+    utils.notify('No active session, cannot set variable')
+    return
+  end
+  if not session.current_frame then
+    utils.notify('Session has no active frame, cannot set variable')
+    return
+  end
+  local parent = get_parent(item, session.current_frame.scopes)
+  if not parent then
+    utils.notify(string.format(
+      "Cannot set variable on %s, couldn't find its parent container",
+      item.name
+    ))
+    return
+  end
+  local view = context.view
+  if view and vim.bo.bufhidden == 'wipe' then
+    view.close()
+  end
+  local value = vim.fn.input(string.format('New `%s` value: ', item.name))
+  local params = {
+    variablesReference = parent.variablesReference,
+    name = item.name,
+    value = value,
+  }
+  session:request('setVariable', params, function(err)
+    if err then
+      utils.notify('Error setting variable: ' .. err.message, vim.log.levels.WARN)
+    else
+      session:_request_scopes(session.current_frame)
+    end
+  end)
+end
+
+
+local function set_expression(_, item, _, context)
+  local session = require('dap').session()
+  if not session then
+    utils.notify('No activate session, cannot set expression')
+    return
+  end
+  local view = context.view
+  if view and vim.bo.bufhidden == 'wipe' then
+    view.close()
+  end
+  local value = vim.fn.input(string.format('New `%s` expression: ', item.name))
+  local params = {
+    expression = item.evaluateName,
+    value = value,
+    frameId = session.current_frame and session.current_frame.id
+  }
+  session:request('setExpression', params, function(err)
+    if err then
+      utils.notify('Error on setExpression: ' .. err.message, vim.log.levels.WARN)
+    else
+      session:_request_scopes(session.current_frame)
+    end
+  end)
+end
+
+
 variable.tree_spec = {
   get_key = variable.get_key,
   render_parent = variable.render_parent,
   render_child = variable.render_child,
   has_children = variable.has_children,
   get_children = variable.get_children,
+  is_lazy = variable.is_lazy,
+  load_value = variable.load_value,
   fetch_children = variable.fetch_children,
+  compute_actions = function(info)
+    local session = require('dap').session()
+    if not session then
+      return {}
+    end
+    local result = {}
+    local capabilities = session.capabilities
+    local item = info.item
+    if item.evaluateName and capabilities.supportsSetExpression then
+      table.insert(result, { label = 'Set expression', fn = set_expression, })
+    elseif capabilities.supportsSetVariable then
+      table.insert(result, { label = 'Set variable', fn = set_variable, })
+    end
+    return result
+  end
 }
 
 
@@ -126,13 +255,152 @@ M.frames = frames
 
 function frames.render_item(frame)
   local session = require('dap').session()
-  if session and frame.id == session.current_frame.id then
-    return '→ ' .. frame.name
+  local line
+  if session and frame.id == (session.current_frame or {}).id then
+    line = '→ ' .. frame.name .. ':' .. frame.line
   else
-    return '  ' .. frame.name
+    line = '  ' .. frame.name .. ':' .. frame.line
+  end
+  if frame.presentationHint == 'subtle' then
+    return line, {{'Comment', 0, -1},}
+  end
+  return line
+end
+
+
+M.threads = {
+  tree_spec = {
+    implicit_expand_action = false,
+  },
+}
+local threads_spec = M.threads.tree_spec
+
+function threads_spec.get_key(thread)
+  return thread.id
+end
+
+function threads_spec.render_parent(thread)
+  return thread.name
+end
+
+function threads_spec.render_child(thread_or_frame)
+  if thread_or_frame.line then
+    -- it's a frame
+    return frames.render_item(thread_or_frame)
+  end
+  if thread_or_frame.stopped then
+    return '⏸️ ' .. thread_or_frame.name
+  else
+    return '▶️ ' .. thread_or_frame.name
   end
 end
 
+function threads_spec.has_children(thread_or_frame)
+  -- Threads have frames
+  return thread_or_frame.line == nil
+end
+
+function threads_spec.get_children(thread)
+  if thread.threads then
+    return thread.threads or {}
+  end
+  return thread.frames or {}
+end
+
+
+function threads_spec.fetch_children(thread, cb)
+  local session = require('dap').session()
+  if thread.line then
+    -- this is a frame, not a thread
+    cb({})
+  elseif thread.threads then
+    cb(thread.threads)
+  elseif session then
+    coroutine.wrap(function()
+      local co = coroutine.running()
+      local is_stopped = thread.stopped
+      if not is_stopped then
+        session:_pause(thread.id, function(err, result)
+          coroutine.resume(co, err, result)
+        end)
+        coroutine.yield()
+      end
+      local params = { threadId = thread.id }
+      local err, resp = session:request('stackTrace', params)
+      if err then
+        utils.notify('Error fetching stackTrace: ' .. utils.fmt_error(err), vim.log.levels.WARN)
+      else
+        thread.frames = resp.stackFrames
+      end
+      if not is_stopped then
+        local err0 = session:request('continue', params)
+        if err0 then
+          utils.notify('Error on continue: ' .. utils.fmt_error(err), vim.log.levels.WARN)
+        else
+          thread.stopped = false
+          local progress = require('dap.progress')
+          progress.report('Thread resumed: ' .. tostring(thread.id))
+          progress.report('Running: ' .. session.config.name)
+        end
+      end
+      cb(threads_spec.get_children(thread))
+    end)()
+  else
+    cb({})
+  end
+end
+
+
+function threads_spec.compute_actions(info)
+  local session = require('dap').session()
+  if not session then
+    return {}
+  end
+  local context = info.context
+  local thread = info.item
+  local result = {}
+  if thread.line then
+    -- this is a frame, not a thread
+    table.insert(result, {
+      label = 'Jump to frame',
+      fn = function(_, frame)
+        session:_frame_set(frame)
+        if vim.bo.bufhidden == 'wipe' and context.view then
+          context.view.close()
+        end
+      end
+    })
+  else
+    table.insert(result, { label = 'Expand', fn = context.tree.toggle })
+    if thread.stopped then
+      table.insert(result, {
+        label = 'Resume thread',
+        fn = function()
+          if session.stopped_thread_id == thread.id then
+            session:_step('continue')
+            context.refresh()
+          else
+            thread.stopped = false
+            session:request('continue', { threadId = thread.id }, function(err)
+              if err then
+                utils.notify('Error on continue: ' .. err.message, vim.log.levels.WARN)
+              end
+              context.refresh()
+            end)
+          end
+        end
+      })
+    else
+      table.insert(result, {
+        label = 'Stop thread',
+        fn = function()
+          session:_pause(thread.id, context.refresh)
+        end
+      })
+    end
+  end
+  return result
+end
 
 
 return M
